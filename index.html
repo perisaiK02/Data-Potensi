@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Potensi & Realisasi</title>
+  <style>
+    body {
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: #f4f6f9;
+      margin: 0;
+      padding: 0;
+      color: #333;
+    }
+    header {
+      background: linear-gradient(90deg, #004aad, #0074e0);
+      color: white;
+      text-align: center;
+      padding: 20px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+    header h1 { margin:0; font-size:1.6em; }
+    .container {
+      max-width: 1100px;
+      margin: 30px auto;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      overflow-x: auto;
+    }
+    h2 { text-align: center; margin-top:0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      min-width: 600px;
+    }
+    th, td { text-align:center; padding:10px; border-bottom:1px solid #ddd; }
+    th { background:#0074e0; color:white; position: sticky; top:0; }
+    tr:hover { background:#f1f7ff; }
+    .progress-bar {
+      width:100%; background:#eaeaea; border-radius:8px; overflow:hidden; height:14px;
+    }
+    .progress-fill {
+      height:100%; text-align:right; padding-right:5px;
+      color:white; font-size:11px; font-weight:bold;
+      transition: width 0.5s ease-in-out;
+    }
+    canvas { width:100%; max-height:400px; margin-top:30px; }
+    footer { text-align:center; margin:30px 0; color:#777; font-size:0.9em; }
+    .refresh-btn {
+      float:right; background:#0074e0; color:white; border:none;
+      border-radius:5px; padding:7px 14px; cursor:pointer; font-size:14px;
+    }
+    .refresh-btn:hover { background:#005bb5; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>📊 Dashboard Potensi & Akuisisi Perisai</h1>
+</header>
+
+<div class="container">
+  <button class="refresh-btn" onclick="loadData()">⟳ Refresh</button>
+  <h2>Tabel Monitoring Perisai</h2>
+  <table id="dataTable">
+    <thead>
+      <tr>
+        <th>Kecamatan</th>
+        <th>Potensi</th>
+        <th>Realisasi</th>
+        <th>Sisa</th>
+        <th>Persentase</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <h2>Proporsi Potensi per Kecamatan</h2>
+  <canvas id="pieChart"></canvas>
+</div>
+
+<footer>
+  © 2025 BPJAMSOSTEK - Monitoring Akuisisi Potensi 
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+<script>
+const scriptUrl = "https://script.google.com/macros/s/AKfycbxY0s3J0LwBPrm4QYOShIM5ibedIWPposwxIK8XEj9UZEFTZ0tCahKzSEUypivGYLq5/exec?action=getPotensiRealisasi";
+let pieChartInstance;
+
+async function loadData() {
+  const tableBody = document.querySelector("#dataTable tbody");
+  tableBody.innerHTML = "<tr><td colspan='5'>Memuat data...</td></tr>";
+
+  try {
+    const res = await fetch(scriptUrl);
+    const result = await res.json();
+    if(result.status !== "ok"){
+      tableBody.innerHTML = `<tr><td colspan='5'>Gagal memuat data: ${result.message}</td></tr>`;
+      return;
+    }
+
+    const data = result.data;
+    tableBody.innerHTML = "";
+    let labels=[], potensiData=[], colors=[];
+
+    const colorPalette = ["#0074e0","#28a745","#ffc107","#dc3545","#6f42c1","#17a2b8","#fd7e14","#20c997","#6610f2","#e83e8c"];
+
+    data.forEach((row,i)=>{
+      const persen = row.potensi>0 ? (row.realisasi/row.potensi)*100 : 0;
+      const warna = persen>=80?"#28a745":persen>=50?"#ffc107":"#dc3545";
+      const progressBar = `<div class="progress-bar"><div class="progress-fill" style="width:${persen.toFixed(1)}%; background:${warna};">${persen.toFixed(1)}%</div></div>`;
+      tableBody.innerHTML+=`<tr id="row-${i}">
+        <td>${row.kecamatan}</td>
+        <td>${row.potensi}</td>
+        <td>${row.realisasi}</td>
+        <td>${row.sisa}</td>
+        <td>${progressBar}</td>
+      </tr>`;
+      labels.push(row.kecamatan);
+      potensiData.push(row.potensi);
+      colors.push(colorPalette[i % colorPalette.length]);
+    });
+
+    renderPieChart(labels,potensiData,colors);
+
+  } catch(err){
+    tableBody.innerHTML = `<tr><td colspan='5'>Error: ${err.message}</td></tr>`;
+  }
+}
+
+function renderPieChart(labels,data,colors){
+  const ctx = document.getElementById("pieChart").getContext("2d");
+  if(pieChartInstance) pieChartInstance.destroy();
+
+  pieChartInstance = new Chart(ctx,{
+    type:"pie",
+    data:{
+      labels,
+      datasets:[{ data:data, backgroundColor:colors }]
+    },
+    options:{
+      responsive:true,
+      plugins:{
+        legend:{ position:"right" },
+        tooltip:{
+          callbacks:{
+            label: function(ctx){
+              let total = ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0);
+              let perc = (ctx.raw/total*100).toFixed(1)+"%";
+              return ctx.label + ": " + ctx.raw + " ("+perc+")";
+            }
+          }
+        },
+        datalabels:{
+          color:'#fff',
+          formatter: function(value, ctx){
+            let total = ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0);
+            let perc = (value/total*100).toFixed(1);
+            return perc + "%";
+          },
+          font: { weight: 'bold', size: 12 }
+        }
+      },
+      onClick: function(evt,activeEls){
+        if(activeEls.length>0){
+          const idx = activeEls[0].index;
+          const row = document.getElementById("row-"+idx);
+          if(row){
+            row.scrollIntoView({behavior:"smooth", block:"center"});
+            row.style.backgroundColor="#ffeaa7";
+            setTimeout(()=>{row.style.backgroundColor="";},1500);
+          }
+        }
+      }
+    },
+    plugins:[ChartDataLabels]
+  });
+}
+
+window.onload = loadData;
+</script>
+</body>
+</html>
